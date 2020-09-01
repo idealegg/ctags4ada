@@ -15,6 +15,7 @@ SOURCES = \
 	awk.c \
 	basic.c \
 	beta.c \
+	ada.c \
 	c.c \
 	cobol.c \
 	dosbatch.c \
@@ -78,6 +79,7 @@ OBJECTS = \
 	basic.$(OBJEXT) \
 	beta.$(OBJEXT) \
 	c.$(OBJEXT) \
+	ada.$(OBJEXT) \
 	cobol.$(OBJEXT) \
 	dosbatch.$(OBJEXT) \
 	eiffel.$(OBJEXT) \

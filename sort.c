@@ -55,8 +55,8 @@ extern void catFile (const char *const name)
 
 extern void externalSortTags (const boolean toStdout)
 {
-	const char *const sortNormalCommand = "sort -u -o";
-	const char *const sortFoldedCommand = "sort -u -f -o";
+	const char *const sortNormalCommand = "E:\\Vim\\vim82\\sort.exe -u -o";
+	const char *const sortFoldedCommand = "E:\\Vim\\vim82\\sort.exe -u -f -o";
 	const char *sortCommand =
 		Option.sorted == SO_FOLDSORTED ? sortFoldedCommand : sortNormalCommand;
 	PE_CONST char *const sortOrder1 = "LC_COLLATE=C";
@@ -85,7 +85,11 @@ extern void externalSortTags (const boolean toStdout)
 # endif
 #endif
 		verbose ("system (\"%s\")\n", cmd);
+    //sprintf(cmd, "%s","E:\\Vim\\vim82\\sort.exe -u -o tags.eGSXFI tags.h3BrjC");
+    //sprintf(cmd, "%s","dir");
 		ret = system (cmd);
+    ret = 0;
+    //printf("sort: [%s][%d]\n", cmd, ret);
 		free (cmd);
 
 	}

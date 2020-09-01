@@ -860,20 +860,23 @@ extern FILE *tempFile (const char *const mode, char **const pName)
 	if (! file->isSetuid)
 		tmpdir = getenv ("TMPDIR");
 	if (tmpdir == NULL)
-		tmpdir = TMPDIR;
+		tmpdir = ".";
 	name = xMalloc (strlen (tmpdir) + 1 + strlen (pattern) + 1, char);
-	sprintf (name, "%s%c%s", tmpdir, OUTPUT_PATH_SEPARATOR, pattern);
+	sprintf (name, "D:\\%s", pattern);
+  //printf("1name: [%s]\n", name);
 	fd = mkstemp (name);
 	eStatFree (file);
 #elif defined(HAVE_TEMPNAM)
 	name = tempnam (TMPDIR, "tags");
 	if (name == NULL)
 		error (FATAL | PERROR, "cannot allocate temporary file name");
+  //printf("2name: [%s]\n", name);
 	fd = open (name, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
 #else
 	name = xMalloc (L_tmpnam, char);
 	if (tmpnam (name) != name)
 		error (FATAL | PERROR, "cannot assign temporary file name");
+  //printf("3name: [%s]\n", name);
 	fd = open (name, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
 #endif
 	if (fd == -1)
