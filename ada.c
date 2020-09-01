@@ -157,13 +157,13 @@ static kindOption AdaKinds[] =
 {
   { TRUE,  'P', "packspec",    "package specifications" },
   { TRUE,   'p', "package",     "packages" },
-  { FALSE,  'T', "typespec",    "type specifications" },
+  { TRUE,  'T', "typespec",    "type specifications" },
   { TRUE,   't', "type",        "types" },
-  { FALSE,  'U', "subspec",     "subtype specifications" },
+  { TRUE,  'U', "subspec",     "subtype specifications" },
   { TRUE,   'u', "subtype",     "subtypes" },
   { TRUE,   'c', "component",   "record type components" },
   { TRUE,   'l', "literal",     "enum type literals" },
-  { FALSE,  'V', "varspec",     "variable specifications" },
+  { TRUE,  'V', "varspec",     "variable specifications" },
   { TRUE,   'v', "variable",    "variables" },
   { TRUE,   'f', "formal",      "generic formal parameters" },
   { TRUE,   'n', "constant",    "constants" },
@@ -174,12 +174,12 @@ static kindOption AdaKinds[] =
   { TRUE,   'k', "task",        "tasks" },
   { TRUE,  'O', "protectspec", "protected data specifications" },
   { TRUE,   'o', "protected",   "protected data" },
-  { FALSE,  'E', "entryspec",   "task/protected data entry specifications" },
+  { TRUE,  'E', "entryspec",   "task/protected data entry specifications" },
   { TRUE,   'e', "entry",       "task/protected data entries" },
   { TRUE,   'b', "label",       "labels" },
   { TRUE,   'i', "identifier",  "loop/declare identifiers"},
-  { FALSE,  'a', "autovar",     "automatic variables" },
-  { FALSE,  'y', "annon",       "loops and blocks with no identifier" }
+  { TRUE,  'a', "autovar",     "automatic variables" },
+  { TRUE,  'y', "annon",       "loops and blocks with no identifier" }
 };
 
 typedef struct sAdaTokenList
@@ -303,7 +303,9 @@ static int lineLen;
 static int pos;
 static unsigned long matchLineNum;
 static fpos_t matchFilePos;
-
+static int braceNum;
+static int lineQuoNum;
+static int bufQuoNum;
 /* utility functions */
 static void makeSpec(adaKind *kind);
 
@@ -574,6 +576,7 @@ static void readNewLine(void)
   {
     line = (const char *) fileReadLine();
     pos = 0;
+    lineQuoNum = 0;
 
     if(line == NULL)
     {
@@ -605,10 +608,39 @@ static void readNewLine(void)
 
 static void movePos(int amount)
 {
-  pos += amount;
+  for(;amount>0;amount--)
+  {
+	if (line[pos++] == '"')
+	{
+		lineQuoNum++;
+	}
+  }
+
   if(exception != EXCEPTION_EOF && pos >= lineLen)
   {
     readNewLine();
+  }
+}
+
+static boolean hasEvenQuotation(char *buf, int pos)
+{
+  int i = 0;
+  int count = 0;
+  for(;i<pos;i++)
+  {
+	if (buf[i] == '"')
+	{
+		count++;
+	}
+  }
+
+  if( count % 2 == 0)
+  {
+	return TRUE;
+  }
+  else
+  {
+	return FALSE;
   }
 }
 
@@ -616,9 +648,10 @@ static void movePos(int amount)
  * cmp() because comments don't have to have whitespace or separation-type
  * characters following the "--" */
 #define isAdaComment(buf, pos, len) \
+  ((lineQuoNum % 2 == 0)&&(bufQuoNum % 2 == 0)&& \
   (((pos) == 0 || (!isalnum((buf)[(pos) - 1]) && (buf)[(pos) - 1] != '_')) && \
    (pos) < (len) && \
-   strncasecmp(&(buf)[(pos)], "--", strlen("--")) == 0)
+   strncasecmp(&(buf)[(pos)], "--", strlen("--")) == 0))
 
 static boolean cmp(char *buf, int len, char *match)
 {
@@ -645,7 +678,8 @@ static boolean cmp(char *buf, int len, char *match)
       (strlen(match) < len &&
        (isspace(buf[strlen(match)]) || buf[strlen(match)] == '(' ||
         buf[strlen(match)] == ')' || buf[strlen(match)] == ':' ||
-        buf[strlen(match)] == ';'))))
+        buf[strlen(match)] == ';')) ||
+	  ((strlen(match)+1 < len && strncasecmp(buf+strlen(match), "--", 2) == 0))))
   {
     status = TRUE;
   }
@@ -718,7 +752,10 @@ static void skipUntilWhiteSpace(void)
   {
     /* don't use movePos() because if we read in a new line with this function
      * we need to stop */
-    pos++;
+    if (line[pos++] == '"')
+    {
+      lineQuoNum++;
+     }
 
     /* the newline counts as whitespace so read in the newline and return
      * immediately */
@@ -726,6 +763,7 @@ static void skipUntilWhiteSpace(void)
     {
       line = (const char *) fileReadLine();
       pos = 0;
+      lineQuoNum = 0;
 
       if(line == NULL)
       {
@@ -829,7 +867,10 @@ static void skipPastWord(void)
   {
     /* don't use movePos() because if we read in a new line with this function
      * we need to stop */
-    pos++;
+    if (line[pos++] == '"')
+    {
+      lineQuoNum++;
+     }
 
     /* the newline counts as whitespace so read in the newline and return
      * immediately */
@@ -837,6 +878,7 @@ static void skipPastWord(void)
     {
       line = (const char *) fileReadLine();
       pos = 0;
+      lineQuoNum = 0;
 
       if(line == NULL)
       {
@@ -957,7 +999,7 @@ static adaTokenInfo *adaParseBlock(adaTokenInfo *parent, adaKind kind)
 
 static adaTokenInfo *adaParseSubprogram(adaTokenInfo *parent, adaKind kind)
 {
-  int i;
+  int i,j;
   adaTokenInfo *token;
   adaTokenInfo *tmpToken = NULL;
 
@@ -982,11 +1024,15 @@ static adaTokenInfo *adaParseSubprogram(adaTokenInfo *parent, adaKind kind)
   /* if we find a '(' grab any parameters */
   if(line[pos] == '(' && token != NULL)
   {
-    while(line[pos] != ')')
+	braceNum = 1;
+
+    while(line[pos] != ')' || braceNum > 0 )
     {
       movePos(1);
+
       tmpToken = adaParseVariables(token, ADA_KIND_AUTOMATIC_VARIABLE);
     }
+	
     movePos(1);
 
     /* check to see if anything was received... If this is an entry this may
@@ -1161,16 +1207,19 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
   adaTokenInfo *token = NULL;
 
   /* buffer management variables */
-  int i = 0;
+  int i = 0, j=0;
   int bufPos = 0;
   int bufLen = 0;
   char *buf = NULL;
 
   /* file and line position variables */
-  unsigned long int lineNum;
+  //volatile unsigned long int lineNum;
   int filePosIndex = 0;
   int filePosSize = 32;
-  fpos_t *filePos = xMalloc(filePosSize, fpos_t);
+  //volatile int lineNum;
+  int * fileNum = xMalloc(filePosSize, int);
+  volatile int * volatile fN_ptr = fileNum;
+  fpos_t * filePos = xMalloc(filePosSize, fpos_t);
 
   /* skip any preliminary whitespace or comments */
   skipWhiteSpace();
@@ -1182,7 +1231,10 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
   /* before we start reading input save the current line number and file
    * position, so we can reconstruct the correct line & file position for any
    * tags we create */
-  lineNum = getSourceLineNumber();
+  //lineNum = getInputLineNumber();
+  /*fileNum[filePosIndex] = lineNum;*/
+  /*fileNum[filePosIndex] = getSourceLineNumber();*/
+  *fN_ptr = (volatile int)getSourceLineNumber();
   filePos[filePosIndex] = getInputFilePosition();
 
   /* setup local buffer... Since we may have to read a few lines to verify
@@ -1191,6 +1243,8 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
   bufLen = lineLen - pos;
   buf = xMalloc(bufLen + 1, char);
   memcpy((void *) buf, (void *) &line[pos], bufLen);
+
+  bufQuoNum = 0;
 
   /* don't increase bufLen to include the NULL char so that strlen(buf) and
    * bufLen match */
@@ -1220,17 +1274,20 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
      * the variable declaration */
     else if(buf[bufPos] == '(')
     {
-      i++;
+      braceNum++;
+	  i++;
     }
     else if(buf[bufPos] == ')')
     {
+      braceNum--;
+
       if(i == 0)
       {
         break;
       }
       else
       {
-        i--;
+		i--;
       }
     }
     else if(buf[bufPos] == ';' ||
@@ -1273,7 +1330,11 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
       tokenStart = -2;
     }
 
-    bufPos++;
+	if (buf[bufPos++] == '"')
+	{
+		bufQuoNum++;
+	}
+
 
     /* if we just incremented beyond the length of the current buffer, we need
      * to read in a new line */
@@ -1283,17 +1344,29 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
 
       /* store the new file position for the start of this line */
       filePosIndex++;
+	  fN_ptr++;
+
       while(filePosIndex >= filePosSize)
       {
         filePosSize *= 2;
         filePos = xRealloc(filePos, filePosSize, fpos_t);
+        fileNum = xRealloc(fileNum, filePosSize, int);
+		fN_ptr = fileNum + filePosIndex;
       }
       filePos[filePosIndex] = getInputFilePosition();
+      /*lineNum = getInputLineNumber();*/
+      /*fileNum[filePosIndex] = lineNum;*/
+      /*fileNum[filePosIndex] = getSourceLineNumber();*/
+	  *fN_ptr = (volatile int)getSourceLineNumber();
 
       /* increment bufLen and bufPos now so that they jump past the NULL
        * character in the buffer */
       bufLen++;
-      bufPos++;
+
+ 	if (buf[bufPos++] == '"')
+    	{
+    		bufQuoNum++;
+    	}
 
       /* allocate space and store this into our buffer */
       bufLen += lineLen;
@@ -1309,6 +1382,11 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
   {
     varEndPos = bufPos;
   }
+
+  /*if (kind == ADA_KIND_AUTOMATIC_VARIABLE && buf[bufPos] == ')' && varEndPos == -1)
+  {
+    varEndPos = bufPos;
+  }*/
 
   /* so we found a : or ;... If it is a : go back through the buffer and
    * create a token for each word skipping over all whitespace and commas
@@ -1344,7 +1422,8 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
 
           /* now set the proper line and file position counts for this
            * new token */
-          token->tag.lineNumber = lineNum + filePosIndex;
+          //token->tag.lineNumber = lineNum + filePosIndex;
+          token->tag.lineNumber = fileNum[filePosIndex];
           token->tag.filePosition = filePos[filePosIndex];
         }
         tokenStart = -1;
@@ -1371,7 +1450,7 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
 
       /* now set the proper line and file position counts for this
        * new token */
-      token->tag.lineNumber = lineNum + filePosIndex;
+      token->tag.lineNumber = fileNum[filePosIndex];
       token->tag.filePosition = filePos[filePosIndex];
     }
   } /* if(varEndPos != -1) */
@@ -1385,6 +1464,7 @@ static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, adaKind kind)
   movePos((lineLen - (bufLen - bufPos)) - pos);
   eFree((void *) buf);
   eFree((void *) filePos);
+  eFree((void *) fileNum);
 
   return token;
 } /* static adaTokenInfo *adaParseVariables(adaTokenInfo *parent, ... ) */
@@ -1718,7 +1798,10 @@ static adaTokenInfo *adaParse(adaParseMode mode, adaTokenInfo *parent)
           /* if nothing else matched this is probably a variable, constant
            * or exception declaration */
           token = adaParseVariables(parent, ADA_KIND_VARIABLE);
-          skipPast(";");
+		  if(token) // only get a var, we can skip ';'
+            skipPast(";");
+		  else
+		    skipPast("\n");
         }
 
         /* check to see if we succeeded in creating our token */
@@ -2094,7 +2177,7 @@ static void storeAdaTags(adaTokenInfo *token, const char *parentScope)
       ((Option.include.fileScope == FALSE) &&
        (token->tag.isFileScope == FALSE))))
   {
-    makeTagEntry(&token->tag);
+    if (token->tag.name) makeTagEntry(&token->tag);
 
     /* before making the tag, if the --extra=+q flag is set we should create 
      * an extra entry which is the full parent.tag name.  But only do this if 
@@ -2122,7 +2205,7 @@ static void storeAdaTags(adaTokenInfo *token, const char *parentScope)
         currentScope[strlen(parentScope) + 1 + strlen(token->name)] = '\0';
 
         token->tag.name = currentScope;
-        makeTagEntry(&token->tag);
+        if (token->tag.name) makeTagEntry(&token->tag);
       } /* if(parentScope != NULL) */
       else
       {
@@ -2170,6 +2253,7 @@ static void findAdaTags(void)
   exception = EXCEPTION_NONE;
   line = NULL;
   pos = 0;
+  lineQuoNum = 0;
   matchLineNum = 0;
   eofCount = 0;
 
@@ -2206,7 +2290,7 @@ static void findAdaTags(void)
 /* parser definition function */
 extern parserDefinition* AdaParser(void)
 {
-  static const char *const extensions[] = { "adb", "ads", "Ada", NULL };
+  static const char *const extensions[] = {"a", "adb", "ads", "Ada", NULL };
   parserDefinition* def = parserNew("Ada");
   def->kinds = AdaKinds;
   def->kindCount = ADA_KIND_COUNT;
